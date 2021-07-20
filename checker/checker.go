@@ -41,40 +41,47 @@ func (c *Checker) Check(query *query.Query) (bool, error) {
 	if !ok {
 		return false, errors.New("table not found in schema.")
 	}
-	whereColumns := query.WhereColumns
-	pks := []spansql.ID{}
-	for _, key := range table.def.PrimaryKey {
-		pks = append(pks, key.Column)
-	}
-
-	if checkKeyIncluded(pks[0], whereColumns) {
-		return true, nil
-	}
-
-	if len(table.indices) == 0 {
-		return false, nil
-	}
+	where := query.Where
+	indices := [][]spansql.KeyPart{table.def.PrimaryKey}
 
 	for _, index := range table.indices {
-		keys := []spansql.ID{}
-		if len(index.Columns) == 0 {
-			continue
-		}
-		for _, key := range index.Columns {
-			keys = append(keys, key.Column)
-		}
-		if checkKeyIncluded(keys[0], whereColumns) {
-			return true, nil
-		}
+		indices = append(indices, index.Columns)
 	}
-	return false, nil
+	return checkKeyIncluded(indices, where), nil
+
 }
 
-func checkKeyIncluded(key spansql.ID, whereColumns []spansql.ID) bool {
-	for _, col := range whereColumns {
-		if key == col {
-			return true
+func checkKeyIncluded(indices [][]spansql.KeyPart, where interface{}) bool {
+	switch op := where.(type) {
+	case spansql.LogicalOp:
+		switch op.Op {
+		case spansql.And:
+			return checkKeyIncluded(indices, op.RHS) || checkKeyIncluded(indices, op.LHS)
+		case spansql.Or:
+			return checkKeyIncluded(indices, op.RHS) && checkKeyIncluded(indices, op.LHS)
+		case spansql.Not:
+			return checkKeyIncluded(indices, op.RHS)
 		}
+	case spansql.ComparisonOp:
+		return checkKeyIncluded(indices, op.RHS) || checkKeyIncluded(indices, op.LHS)
+	case spansql.Paren:
+		return checkKeyIncluded(indices, op.Expr)
+	case spansql.InOp:
+		return checkKeyIncluded(indices, op.RHS) || checkKeyIncluded(indices, op.LHS)
+	case spansql.ID:
+		for _, index := range indices {
+			keys := []spansql.ID{}
+			if len(index) == 0 {
+				continue
+			}
+			for _, key := range index {
+				keys = append(keys, key.Column)
+			}
+			if keys[0] == op {
+				return true
+			}
+		}
+		return false
 	}
 	return false
 }

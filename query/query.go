@@ -2,20 +2,26 @@ package query
 
 import (
 	"fmt"
-	"strings"
+	"regexp"
 
 	"cloud.google.com/go/spanner/spansql"
 )
 
 type Query struct {
-	Table        spansql.ID
-	WhereColumns []spansql.ID
+	Table spansql.ID
+	Where spansql.BoolExpr
 }
+
+var (
+	rs = regexp.MustCompile(`(?i)^SELECT`)
+	ru = regexp.MustCompile(`(?i)^UPDATE`)
+	rd = regexp.MustCompile(`(?i)^DELETE`)
+)
 
 func NewQuery(s string) (*Query, error) {
 	var query *Query
 	switch {
-	case strings.HasPrefix(s, "SELECT"):
+	case rs.MatchString(s):
 		q, err := spansql.ParseQuery(s)
 		if err != nil {
 			return nil, fmt.Errorf("cant parse query. query: %s err: %v", s, err)
@@ -31,49 +37,28 @@ func NewQuery(s string) (*Query, error) {
 			return nil, fmt.Errorf("cant parse select query %s", q.SQL())
 		}
 		query = &Query{
-			Table:        selectTable.Table,
-			WhereColumns: whereColumns(q.Select.Where),
+			Table: selectTable.Table,
+			Where: q.Select.Where,
 		}
-	case strings.HasPrefix(s, "UPDATE"), strings.HasPrefix(s, "DELETE"):
+	case ru.MatchString(s), rd.MatchString(s):
 		dml, err := spansql.ParseDMLStmt(s)
 		if err != nil {
 			return nil, fmt.Errorf("cant parse dml. dml: %s err: %v", s, err)
 		}
 		if u, ok := dml.(*spansql.Update); ok {
 			query = &Query{
-				Table:        u.Table,
-				WhereColumns: whereColumns(u.Where),
+				Table: u.Table,
+				Where: u.Where,
 			}
 		}
 		if d, ok := dml.(*spansql.Delete); ok {
 			query = &Query{
-				Table:        d.Table,
-				WhereColumns: whereColumns(d.Where),
+				Table: d.Table,
+				Where: d.Where,
 			}
 		}
 	default:
 		return nil, fmt.Errorf("query needs to start with (SELECT|UPDATE|DELETE). query: %s", s)
 	}
 	return query, nil
-}
-func whereColumns(where interface{}) []spansql.ID {
-	switch op := where.(type) {
-	case spansql.LogicalOp:
-		lhs := whereColumns(op.LHS)
-		rhs := whereColumns(op.RHS)
-		return append(lhs, rhs...)
-	case spansql.ComparisonOp:
-		lhs := whereColumns(op.LHS)
-		rhs := whereColumns(op.RHS)
-		return append(lhs, rhs...)
-	case spansql.Paren:
-		return whereColumns(op.Expr)
-	case spansql.InOp:
-		lhs := whereColumns(op.LHS)
-		rhs := whereColumns(op.RHS)
-		return append(lhs, rhs...)
-	case spansql.ID:
-		return []spansql.ID{op}
-	}
-	return []spansql.ID{}
 }
