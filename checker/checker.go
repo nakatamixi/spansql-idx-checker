@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"cloud.google.com/go/spanner/spansql"
-	"github.com/nakatamixi/spansql-idx-checker/query"
+	"github.com/nktks/spansql-idx-checker/query"
 )
 
 type Checker struct {

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner/spansql"
-	"github.com/nakatamixi/spansql-idx-checker/checker"
-	"github.com/nakatamixi/spansql-idx-checker/query"
+	"github.com/nktks/spansql-idx-checker/checker"
+	"github.com/nktks/spansql-idx-checker/query"
 )
 
 var (
